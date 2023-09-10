@@ -1,9 +1,11 @@
+import gzip
+import os
+import tempfile
 import unittest
 from unittest.mock import patch
 
-from mock import mock_open
 import requests
-from debian_package_stats import get_all_filenames, download_contents_index
+from debian_package_stats import get_all_filenames, download_contents_index, parse_contents_index
 
 URL = 'http://ftp.uk.debian.org/debian/dists/stable/main/'
 
@@ -44,7 +46,7 @@ class TestDebianPackageStats(unittest.TestCase):
         self.assertIsNone(filenames)
     
     @patch('requests.get')
-    @patch('builtins.open', new_callable=mock_open)
+    @patch('builtins.open', new_callable=unittest.mock.mock_open)
     def test_download_contents_index_success(self, mock_file_open, mock_requests_get):
         # Arrange
         mock_response = mock_requests_get.return_value
@@ -56,7 +58,7 @@ class TestDebianPackageStats(unittest.TestCase):
         result = download_contents_index(filename)
 
         # Assert
-        mock_requests_get.assert_called_once_with(URL+filename, stream=True)
+        mock_requests_get.assert_called_once_with(URL + filename, stream=True)
         mock_response.raise_for_status.assert_called()
         mock_file_open.assert_called_once_with(filename, 'wb')
         mock_file = mock_file_open()
@@ -73,9 +75,74 @@ class TestDebianPackageStats(unittest.TestCase):
         result = download_contents_index(filename)
 
         # Assert
-        mock_requests_get.assert_called_once_with(URL+filename, stream=True)
+        mock_requests_get.assert_called_once_with(URL + filename, stream=True)
         self.assertEqual(result, "")
 
+    def test_parse_contents_index_single_thread(self):
+        # Arrange
+        temp_file = tempfile.NamedTemporaryFile(delete=False, mode='wb')
+        with gzip.open(temp_file.name, 'wb') as gzipped_file:
+            gzipped_file.write(b"""
+                bin/abpoa                science/abpoa
+                bin/abpoa.ssse3          science/abpoa
+                bin/bash                 shells/bash
+            """)
+
+        expected_output = [
+            ('science/abpoa', 2),
+            ('shells/bash', 1),
+        ]
+
+        # Act
+        result = parse_contents_index(temp_file.name)
+        # Close the temporary file before attempting to unlink it
+        temp_file.close()
+
+        # Assert
+        self.assertEqual(result, expected_output)
+
+        # Remove the temporary file after testing
+        os.unlink(temp_file.name)
+
+    def test_parse_contents_index_multithreads(self):
+        # Arrange
+        temp_file = tempfile.NamedTemporaryFile(delete=False, mode='wb')
+        with gzip.open(temp_file.name, 'wb') as gzipped_file:
+            gzipped_file.write(b"""
+                bin/abpoa                science/abpoa
+                bin/abpoa.sse3           science/abpoa
+                bin/abpoa.sse4.1         science/abpoa
+                bin/abpoa.ssse3          science/abpoa
+                bin/bash                 shells/bash
+                bin/bash-static          shells/bash-static
+                bin/brltty               admin/brltty
+                bin/bsd-csh              shells/csh
+                bin/btrfs                admin/btrfs-progs
+                bin/btrfs-select-super   admin/btrfs-progs
+                bin/btrfsck              admin/btrfs-progs
+            """)
+
+        expected_output = [
+            ('science/abpoa', 4),
+            ('shells/bash', 1),
+            ('shells/bash-static', 1),
+            ('admin/brltty', 1),
+            ('shells/csh', 1),
+            ('admin/btrfs-progs', 3),
+        ]
+        expected_output.sort()
+
+        # Act
+        result = parse_contents_index(temp_file.name)
+        result.sort()
+        # Close the temporary file before attempting to unlink it
+        temp_file.close()
+
+        # Assert
+        self.assertEqual(result, expected_output)
+
+        # Remove the temporary file after testing
+        os.unlink(temp_file.name)
 
 if __name__ == "__main__":
     unittest.main()
