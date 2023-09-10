@@ -1,60 +1,15 @@
 import gzip
 import re
 import threading
-from typing import Any, List, Tuple, Union
+from typing import List, Tuple, Union
 
 import requests
 from bs4 import BeautifulSoup
 
 URL = 'http://ftp.uk.debian.org/debian/dists/stable/main/'
 
-# Define an Observer interface
-class Observer:
-    def update(self, message: str) -> None:
-        pass
-
-class Package:
-    def __init__(self, data: Any) -> None:
-        self.data = data
-
-
-class File:
-    def __init__(self, data: Any) -> None:
-        self.data = data
-
-
-class DownloadQueueManager:
-    _instance = None
-
-    def __new__(cls) -> "DownloadQueueManager":
-        if cls._instance is None:
-            cls._instance = super().__new__(cls)
-            cls._instance.queue = []
-        return cls._instance
-
-    def add_to_queue(self, item: Any) -> None:
-        self.queue.append(item)
-
-    def get_queue_size(self) -> int:
-        return len(self.queue)
-
-class DownloadManager:
-    def __init__(self) -> None:
-        self.observers: List[Observer] = []
-
-    def add_observer(self, observer: Observer) -> None:
-        self.observers.append(observer)
-
-    def notify_observers(self, message: str) -> None:
-        for observer in self.observers:
-            observer.update(message)
-
-class UserInterface(Observer):
-    def update(self, message: str) -> None:
-        print(f"User interface notified: {message}")
-
 def get_all_filenames() -> Union[List[str], None]:
-
+    """Retrieve a list of filenames from the Debian mirror.""" 
     try:
         # Send an HTTP GET request to the URL
         response = requests.get(URL)
@@ -78,6 +33,7 @@ def get_all_filenames() -> Union[List[str], None]:
         return None
     
 def download_contents_index(filename: str) -> str:
+    """Download the Contents index file and save it locally."""
     # Construct the full URL by appending the 'filename' to the base 'URL'.
     url = URL + filename
 
@@ -106,6 +62,7 @@ def download_contents_index(filename: str) -> str:
         return ""
 
 def parse_contents_index(contents_data: str) -> List[Tuple[str, int]]:
+    """Parse the Contents index data and calculate package statistics."""
     # Considering that the amount of data is in the millions, 
     # I decided to use multi-threading to handle the process
     package_stats = {}  # Dictionary to store package statistics
@@ -148,13 +105,13 @@ def parse_contents_index(contents_data: str) -> List[Tuple[str, int]]:
     sorted_stats = sorted(package_stats.items(), key=lambda x: x[1], reverse=True)
     return sorted_stats
 
-def get_top_10_packages(package_data: Any) -> List[Tuple[str, int]]:
-    pass
+def get_top_x_packages(x: int, package_data: List[Tuple[str, int]]) -> List[Tuple[str, int]]:
+    """Get the top 'x' packages based on package data."""
+    return package_data[:x]
 
 def main() -> None:
-    download_manager = DownloadManager()
-    download_manager.add_observer(UserInterface())
-
+    """Main function to interact with the user and perform package statistics analysis."""
+    NUMBERS_OF_TOP_PACKAGES = 10
     filenames = get_all_filenames()
 
     # Check if filenames were retrieved successfully
@@ -176,14 +133,25 @@ def main() -> None:
                     # Download Contents index
                     contents_data = download_contents_index(selected_filename)
                     
-                    # Parse Contents index
-                    package_data = parse_contents_index(contents_data)
+                    if contents_data:
+                        # Parse Contents index
+                        package_data = parse_contents_index(contents_data)
+                    else:
+                        break
                     
                     # Calculate and display statistics
-                    # top_packages = get_top_10_packages(package_data)
-                    # for package, num_files in top_packages:
-                    #     print(f"{package}\t{num_files}")
-                    print(package_data)
+                    top_packages = get_top_x_packages(NUMBERS_OF_TOP_PACKAGES, package_data)
+
+                    max_package_length = max(len(package) for package, _ in top_packages)
+                    max_num_files_length = max(len(str(num_files)) for _, num_files in top_packages)
+                    max_length = max_package_length + max_num_files_length
+
+                    for i, (package, num_files) in enumerate(top_packages, start=1):
+                        # Calculate the length difference and add spaces accordingly
+                        space = " " * (max_length - len(str(i)) - len(package) - len(str(num_files)))
+                        # Print the formatted output with numbering
+                        print(f"{i}. {package}{space}\t{num_files}")
+
                 else:
                     print("Invalid choice. Please enter a valid number.")
             except ValueError:
