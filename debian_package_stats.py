@@ -218,7 +218,7 @@ def display_all_contents_on_mirror() -> None:
 def main() -> None:
     """Main function to interact with the user and perform package statistics analysis."""
 
-    # Check if command-line arguments were provided for architecture
+    # Check if command-line arguments were provided for architecture, only accept 'amd64', 'arm64', and 'mips'.
     if len(sys.argv) == 2:
         architecture = sys.argv[1]
         print(f"Running package statistics analysis for architecture: {architecture}")
