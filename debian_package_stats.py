@@ -9,6 +9,8 @@ from bs4 import BeautifulSoup
 
 URL = 'http://ftp.uk.debian.org/debian/dists/stable/main/'
 NUMBERS_OF_TOP_PACKAGES = 10
+CHUNK_SIZE = 8192
+THREADS = 4 # 4 threads can handle Contents-amd64.gz in 5 sec on my own machine
 
 def get_all_filenames() -> Union[List[str], None]:
     """
@@ -70,7 +72,7 @@ def download_contents_index(filename: str) -> str:
         # Open a file in binary write ('wb') mode to save the downloaded content.
         with open(filename, "wb") as content_file:
             # Iterate over the response content in chunks of 8192 bytes.
-            for chunk in response.iter_content(chunk_size=8192):
+            for chunk in response.iter_content(chunk_size=CHUNK_SIZE):
                 if chunk:
                     content_file.write(chunk)
 
@@ -115,7 +117,7 @@ def parse_contents_index(contents_data: str) -> List[Tuple[str, int]]:
             print(f"Error parsing Contents index: {e}")
 
     num_lines = sum(1 for _ in gzip.open(contents_data, "rt", encoding="utf-8"))
-    num_threads = min(4, num_lines)  # 4 threads can handle Contents-amd64.gz in 5 sec on my own machine
+    num_threads = min(THREADS, num_lines)  
 
     # Divide the lines among the threads
     step = num_lines // num_threads
