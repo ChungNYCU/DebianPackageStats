@@ -1,5 +1,6 @@
 import gzip
 import re
+import sys
 import threading
 from typing import List, Tuple, Union
 
@@ -7,9 +8,15 @@ import requests
 from bs4 import BeautifulSoup
 
 URL = 'http://ftp.uk.debian.org/debian/dists/stable/main/'
+NUMBERS_OF_TOP_PACKAGES = 10
 
 def get_all_filenames() -> Union[List[str], None]:
-    """Retrieve a list of filenames from the Debian mirror.""" 
+    """
+    Retrieve a list of filenames containing 'Contents' from a URL directory listing.
+
+    Returns:
+        Union[List[str], None]: A list of filenames if successful, or None on failure.
+    """
     try:
         # Send an HTTP GET request to the URL
         response = requests.get(URL)
@@ -33,7 +40,23 @@ def get_all_filenames() -> Union[List[str], None]:
         return None
     
 def download_contents_index(filename: str) -> str:
-    """Download the Contents index file and save it locally."""
+    """
+    Download a Contents index file from a specified URL and save it locally.
+
+    Args:
+        filename (str): The name of the Contents index file or a reserved architecture name.
+
+    Returns:
+        str: The filename of the downloaded Contents index file if successful, or an empty string on failure.
+    """
+    # If user passed the arg, parse the filename
+    reserved_args = set(['amd64', 'arm64', 'mips'])
+    if filename in reserved_args:
+        if filename == 'mips':
+            filename = f"Contents-{filename}64el.gz"
+        else:
+            filename = f"Contents-{filename}.gz"
+
     # Construct the full URL by appending the 'filename' to the base 'URL'.
     url = URL + filename
 
@@ -62,9 +85,17 @@ def download_contents_index(filename: str) -> str:
         return ""
 
 def parse_contents_index(contents_data: str) -> List[Tuple[str, int]]:
-    """Parse the Contents index data and calculate package statistics."""
+    """
+    Parse the Contents index data to extract package statistics.
     # Considering that the amount of data is in the millions, 
     # I decided to use multi-threading to handle the process
+
+    Args:
+        contents_data (str): The path to the Contents index file.
+
+    Returns:
+        List[Tuple[str, int]]: A list of tuples containing package names and the number of associated files.
+    """
     package_stats = {}  # Dictionary to store package statistics
 
     def parse_lines(start, end):
@@ -106,12 +137,60 @@ def parse_contents_index(contents_data: str) -> List[Tuple[str, int]]:
     return sorted_stats
 
 def get_top_x_packages(x: int, package_data: List[Tuple[str, int]]) -> List[Tuple[str, int]]:
-    """Get the top 'x' packages based on package data."""
+    """
+    Get the top X packages based on a specific criteria from a list of package data.
+
+    Args:
+        x (int): The number of top packages to retrieve.
+        package_data (List[Tuple[str, int]]): A list of tuples containing package names and associated values.
+
+    Returns:
+        List[Tuple[str, int]]: A list of the top X packages based on the specified criteria.
+    """
     return package_data[:x]
 
-def main() -> None:
-    """Main function to interact with the user and perform package statistics analysis."""
-    NUMBERS_OF_TOP_PACKAGES = 10
+def process_selected_architecture(architecture: str) -> None:
+    """
+    Download, parse, and display package statistics for a selected Debian architecture.
+
+    Args:
+        architecture (str): The Debian architecture to process.
+
+    Returns:
+        None
+    """
+    selected_filename = architecture
+    print(f"Downloading: {selected_filename}")
+    
+    # Download Contents index
+    contents_data = download_contents_index(selected_filename)
+    
+    if contents_data:
+        # Parse Contents index
+        package_data = parse_contents_index(contents_data)
+    else:
+        return
+    
+    # Calculate and display statistics
+    top_packages = get_top_x_packages(NUMBERS_OF_TOP_PACKAGES, package_data)
+
+    max_package_length = max(len(package) for package, _ in top_packages)
+    max_num_files_length = max(len(str(num_files)) for _, num_files in top_packages)
+    max_length = max_package_length + max_num_files_length
+
+    for i, (package, num_files) in enumerate(top_packages, start=1):
+        # Calculate the length difference and add spaces accordingly
+        space = " " * (max_length - len(str(i)) - len(package) - len(str(num_files)))
+        # Print the formatted output with numbering
+        print(f"{i}. {package}{space}\t{num_files}")
+
+def display_all_contents_on_mirror() -> None:
+    """
+    Display a list of available Debian mirror contents and allow the user to select an architecture for analysis.
+
+    Returns:
+        None
+    """
     filenames = get_all_filenames()
 
     # Check if filenames were retrieved successfully
@@ -127,31 +206,8 @@ def main() -> None:
                 if 0 <= choice <= len(filenames):
                     if choice == 0:
                         break
-                    selected_filename = filenames[choice - 1]
-                    print(f"Downloading: {selected_filename}")
-                    
-                    # Download Contents index
-                    contents_data = download_contents_index(selected_filename)
-                    
-                    if contents_data:
-                        # Parse Contents index
-                        package_data = parse_contents_index(contents_data)
-                    else:
-                        break
-                    
-                    # Calculate and display statistics
-                    top_packages = get_top_x_packages(NUMBERS_OF_TOP_PACKAGES, package_data)
-
-                    max_package_length = max(len(package) for package, _ in top_packages)
-                    max_num_files_length = max(len(str(num_files)) for _, num_files in top_packages)
-                    max_length = max_package_length + max_num_files_length
-
-                    for i, (package, num_files) in enumerate(top_packages, start=1):
-                        # Calculate the length difference and add spaces accordingly
-                        space = " " * (max_length - len(str(i)) - len(package) - len(str(num_files)))
-                        # Print the formatted output with numbering
-                        print(f"{i}. {package}{space}\t{num_files}")
-
+                    process_selected_architecture(filenames[choice - 1])
+                    break
                 else:
                     print("Invalid choice. Please enter a valid number.")
             except ValueError:
@@ -159,6 +215,18 @@ def main() -> None:
     else:
         print("Unable to find any files. Please check if the URL is correct.")
 
+def main() -> None:
+    """Main function to interact with the user and perform package statistics analysis."""
 
+    # Check if command-line arguments were provided for architecture
+    if len(sys.argv) == 2:
+        architecture = sys.argv[1]
+        print(f"Running package statistics analysis for architecture: {architecture}")
+        process_selected_architecture(architecture)
+    else:
+        # If user did not provide the arg, retrieve all Contents files from the mirror
+        display_all_contents_on_mirror()
+        
+    
 if __name__ == "__main__":
     main()
