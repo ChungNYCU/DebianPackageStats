@@ -77,8 +77,34 @@ def get_all_filenames() -> Union[List[str], None]:
         print(f'Error making the HTTP request: {e}')
         return None
     
-def download_contents_index(filename: str) -> Any:
-    pass
+def download_contents_index(filename: str) -> str:
+    # Construct the full URL by appending the 'filename' to the base 'URL'.
+    url = URL + filename
+
+    try:
+        # Send an HTTP GET request to the URL and stream the response.
+        response = requests.get(url, stream=True)
+        
+        # Check if the HTTP response status code indicates success (2xx).
+        response.raise_for_status()
+
+        # Open a file in binary write ('wb') mode to save the downloaded content.
+        with open(filename, "wb") as content_file:
+            # Iterate over the response content in chunks of 8192 bytes.
+            for chunk in response.iter_content(chunk_size=8192):
+                if chunk:
+                    content_file.write(chunk)
+
+        # Return the filename as a signal of success.
+        return filename
+
+    except requests.exceptions.RequestException as e:
+        # Handle any exceptions raised during the request, such as network errors.
+        print(f"Error downloading Contents index: {e}")
+        
+        # Return an empty string to indicate failure.
+        return ""
+
 
 def parse_contents_index(contents_data: Any) -> Any:
     pass
@@ -108,7 +134,7 @@ def main() -> None:
                     selected_filename = filenames[choice - 1]
                     print(f"Downloading: {selected_filename}")
                     # Download Contents index
-                    # contents_data = download_contents_index(selected_filename)
+                    contents_data = download_contents_index(selected_filename)
 
                     # Parse Contents index
                     # package_data = parse_contents_index(contents_data)
@@ -117,7 +143,7 @@ def main() -> None:
                     # top_packages = get_top_10_packages(package_data)
                     # for package, num_files in top_packages:
                     #     print(f"{package}\t{num_files}")
-                    # print(contents_data)
+                    print(contents_data)
                 else:
                     print("Invalid choice. Please enter a valid number.")
             except ValueError:
